@@ -1,1 +1,1 @@
-# tag-controller
+# metadata-controller

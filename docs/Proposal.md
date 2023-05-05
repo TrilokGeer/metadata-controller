@@ -129,12 +129,11 @@ TODO
 ### Example
 
 ```yaml
+apiVersion: metadata-controller.cloud.io/v1alpha1
 kind: CloudMetadata 
 metadata: 
   name : metadata
   namespace: metadata-controller
-  labels:
-    "app.metadata-controller": "use"
 spec:
   cloudprovider:
     awsref:
@@ -145,46 +144,55 @@ spec:
   controllerpolicy:
     overwrite: "POLICY_LREPLACE_ALL"
     limit: "POLICY_APPLY_PARTIAL"
+status:
+  type: ready
+  status: true
+  reason: "none"
+  message: "tags are applied successfully and can be referred by users"
 ```
 
 ```yaml
+apiVersion: metadata-controller.aws.io/v1alpha1
 kind: AWSMetadata
 metadata:
   name: awstags
   namespace: metadata-controller
-  labels:
-    app.metadata-controller: "use"
 spec:
   resourcetags:
     "env": "test"
     "centre": "eng"
+status:
+  type: applied
+  status: true
+  reason: "none"
+  message: "tags are applied successfully to cloud resources"
 ```
 
 ```go
 type CloudMetadata struct {
     metav1.TypeMeta `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
-	
-	Spec MetadataSpec `json:"spec"`
-	
-	Status MetadataStatus `json:status`
+    
+    Spec MetadataSpec `json:"spec"`
+    
+    Status MetadataStatus `json:status`
 }
 
 type MetadataSpec struct {
-	CloudProviderSpec CloudProviderSpec `json:"cloudprovider"`
-	GlobalClassifiers *ClassifierSpec `json:"classifier, omitempty"`
+    CloudProviderSpec CloudProviderSpec `json:"cloudprovider"`
+    GlobalClassifiers *ClassifierSpec `json:"classifier, omitempty"`
     GlobalControllerPolicy *ControllerPolicyConfig `json:"controllerpolicy, omitempty"`
 }
 
 type CloudProviderSpec struct {
-	// TODO: variable list of cloud type required
-	AWS *AWSMetadataRef `json:"awsmetadataref", omitempty`
-	//... and other cloud providers
+    // TODO: variable list of cloud type required
+    AWS *AWSMetadataRef `json:"awsmetadataref", omitempty`
+    //... and other cloud providers
 }
 
 type AWSMetadataRef struct {
-	Name string `json:"name"`
-	Namespace string `json:"namespace"`
+    Name string `json:"name"`
+    Namespace string `json:"namespace"`
 }
 
 type AWSMetadata struct {
@@ -193,19 +201,50 @@ type AWSMetadata struct {
 
     Spec AWSMetadataSpec `json:"spec"`
 
-    Status AWSMetadataStatus `json:status`
+    Status CloudProviderStatus `json:status`
 }
 
 type AWSMetadataSpec struct {
-	ResourceTags map[string]string `json:"resourcetags"`
+    ResourceTags map[string]string `json:"resourcetags"`
+}
+
+type CloudProviderConditionType string
+
+const (
+    CloudProviderConditionApplied MetadataConditionType = "applied"
+    CloudProviderConditionApproved MetadataConditionType = "approved"
+    CloudProviderConditionPolicy MetadataConditionType = "policy"
+    CloudProviderConditionRequest MetadataConditionType = "request"
+)
+
+type CloudProviderStatus struct {
+    Type CloudProviderConditionType `json:"type"`
+    Status metav1.ConditionStatus `json:"status"`
+    LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
+    Reason string `json:"reason, omitempty"`
+    Message string `json:"message, omitempty"`
+}
+
+type MetadataStatusConditionType string
+
+const (
+    MetadataConditionReady MetadataStatusConditionType = "ready"
+)
+
+type MetadataStatus struct {
+    Type MetadataStatusCondtitionType `json:"type"`
+    Status metav1.ConditionStatus `json:"status"`
+    LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
+    Reason string `json:"reason, omitempty"`
+    Message string `json:"message, omitempty"`
 }
 
 type ClassifierSpec struct {
-	Classifiers map[string]string `json:"classifiers"`
+    Classifiers map[string]string `json:"classifiers"`
 }
 
 type ControllerPolicyConfig struct {
-	OverwritePolicy OPolicy `json:"overwrite, omitempty"`
-	LimitPolicy LPolicy `json:"limit, omitempty"`
+    OverwritePolicy OPolicy `json:"overwrite, omitempty"`
+    LimitPolicy LPolicy `json:"limit, omitempty"`
 }
 ```

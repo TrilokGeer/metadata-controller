@@ -1,18 +1,26 @@
 # Metadata Controller
 
-The metadata controller adds, replaces and reconciles metadata required for cloud resources.
-The scope of the present proposal is to enable continuous management of user-defined tags for cloud resources.
+The metadata controller provides capability to add, update, delete and reconcile metadata required for cloud resources.
+The scope of the present proposal is to enable continuous management of user-defined tags for cloud resources. The APIs in the 
+proposal have been deliberately designed to be modular for extensibility in the early versions. The API will be refined and updated 
+based on use-cases towards beta versions.
 
 ## Summary
 
-Tagging cloud resources enables users to perform administrative operations like, organize the resources, 
+Tagging cloud resources enable users to perform administrative operations like, organize the resources, 
 apply security policies, optimize operations, etc. The cloud resources can be tagged using cloud service provider tools, 
-kubernetes controllers that create resources via cloud service provider api, other open source tools. A reconciliation 
-using a generic metadata controller helps to keep the tags synchronized for cloud resources.
+kubernetes controllers that create resources via cloud service provider api and other open source tools. A reconciliation 
+using a generic metadata controller helps to keep the tags synchronized for cloud resources. 
+
+In the following proposal, the controller supports mainly 
+1. Day 2 operations and tag management for cloud resources selected using classifiers.
+2. Own the tag list and reconcile to replace any edits performed external to the controller.
+3. Opcodes in specification for handling user request as an operation on tag list.
+4. Extensible APIs and segregated configuration for controller and cloud provider specific configurations.
 
 ## Motivation
 
-Users should be able to maintain lifecycle of tags for cloud resources created during installation and by other day-2 kubernetes
+Users should be able to maintain lifecycle of tags for cloud resources created during installation or by other day-2 kubernetes
 controllers and operators using kubernetes API.
 
 ### User stories
@@ -148,13 +156,23 @@ type CloudMetadata struct {
 }
 
 type MetadataSpec struct {
+	// CloudProviderSpec defines cloudprovider specific configurations
+	// to authenticate, apply metadata and applicable policies.
     CloudProviderSpec CloudProviderSpec `json:"cloudprovider"`
+	
+	// GlobalClassifiers are the tags applied on cloudresouces for 
+	// identification by user. Controller uses classifiers to identify
+	// cloud resources. GlobalClassifiers are common to all listed 
+	// cloud providers in CloudProviderSpec.
     GlobalClassifiers ClassifierSpec `json:"classifier"`
+	
+	// GlobalControllerConfig are controller specific behavioral configurations.
     GlobalControllerConfig *ControllerConfig `json:"controllerconfig, omitempty"`
 }
 
 type CloudProviderSpec struct {
     // TODO: variable list of cloud type required
+	// CloudProviderSpec uses reference to different cloud provider specific API objects.
     AWS *AWSMetadataRef `json:"awsmetadataref", omitempty`
     //... and other cloud providers
 }
@@ -180,6 +198,7 @@ type AWSMetadataSpec struct {
 
 type OpCodeType string
 
+// Opcodes supported by controller
 const (
 	OpAdd OpCodeType = "add"
 	OpUpdate OpCodeType = "update"
@@ -189,9 +208,16 @@ const (
 type CloudProviderConditionType string
 
 const (
+	// CloudProviderConditionApplied indicates tags add/update operation completion condition.
     CloudProviderConditionApplied MetadataConditionType = "applied"
+	
+	// CloudProviderConditionApproved signifies the tags validation condition.
     CloudProviderConditionApproved MetadataConditionType = "approved"
+	
+	// CloudProviderConditionPolicy indicates if there are any policy condition failures.
     CloudProviderConditionPolicy MetadataConditionType = "policy"
+	
+	// CloudProviderConditionRequest indicates any operation condition.
     CloudProviderConditionRequest MetadataConditionType = "request"
 )
 
@@ -205,16 +231,27 @@ type CloudProviderStatus struct {
 
 type MetadataStatusConditionType string
 
+// Extensible for cases when there are multiple cloud providers being 
+// referred to tag management.
 const (
     MetadataConditionReady MetadataStatusConditionType = "ready"
 )
 
 type MetadataStatus struct {
+	// Type and status signify the condition type and success status.
     Type MetadataStatusCondtitionType `json:"type"`
     Status metav1.ConditionStatus `json:"status"`
+	
+	// LastTransitionTime provides the time for last operation handled by the controller.
     LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
+	
+	// Reason gives the error codes in string for failures.
     Reason string `json:"reason, omitempty"`
+	
+	// Message details the string error messages.
     Message string `json:"message, omitempty"`
+	
+	// Resourcestags is the active list of tags applied to cloud resources.
     ResourceTags map[string]string `json:"resourcetags"`
 }
 
@@ -236,7 +273,7 @@ type ControllerConfig struct {
 3. User creates `AWSMetadata` object with tag list details.
 4. User creates `CloudMetadata` configuration with controller configuration.
 5. Based on the configuration, controller queries and lists all resources based on classifier tag.
-6. Creates list of existing tags on cloud resource and adds to custom resource.
+6. Creates list of existing tags on cloud resource.
 7. Add/update tag workflow is initiated.
 
 #### Add/Update tags
@@ -276,7 +313,12 @@ When multiple classifiers are used, a logical OR condition is applied for the cl
 #### Reconciliation
 
 Reconciliation of tags is ignored when ready condition is set to false at `MetadataStatus.status`. Reconciliation does not consider 
-the opcode in spec. Reconciliation of tags is based on active tag list in `AWSMetadata.status.resourcetags`
+the opcode in spec. Reconciliation of tags is based on active tag list in `AWSMetadata.status.resourcetags`. On deletion of AWSMetadataRef 
+or invalid reference, controller does not perform any reconciliation. Ready condition is set to false at `MetadataStatus.status`.
+
+#### No cloud provider configured
+
+When there is no cloud provider object configured, there will be no operation by default.
 
 ### STS/Non-STS support
 

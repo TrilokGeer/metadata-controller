@@ -26,7 +26,7 @@ As a cluster admin, I want all tags to be added via metadata CR, which helps to 
 
 As a cluster admin, I want to delete tags, which are not required on the cloud resources.
 
-As a cluster admin, I want to add tags on selected resources, which are identified using specified labels/identifiers.
+As a cluster admin, I want to add tags on selected resources, which are identified using specified labels/classifiers.
 
 As a cluster admin, I want to be able to ignore tags on the cloud resource from all operations, which helps to avoid overwriting values 
 set by cloud service provider's policies.
@@ -43,14 +43,10 @@ As a cluster admin, I want to use a CLI, that helps to securely login to cloud s
 
 1. Enable continuous management operations (create, append , update and delete) applicable for tagging 
  cloud resources created by kubernetes services.
-
 2. Provide a new custom resource of kubernetes api for specification and status of tags.
-
 3. Enable continuous monitoring of tags applied and reconcile when there are changes made external to 
 the controller's API.
-
-4. Provide CLI for operations, cloud service provide authentication and ability to edit custom resource with ease. 
-
+4. Provide CLI for operations, cloud service provide authentication and ability to edit custom resource with ease.
 5. Provide metrics collection and audit logging features for controller and user operations.
 
 ### Non-goals
@@ -58,29 +54,20 @@ the controller's API.
 1. Managing metadata which are not related to cloud resource tagging.
 2. Data-related metadata for stored objects and records.
 3. Sub-set of input tags to be applied on selected cloud resource.
-4. Managing conflict with cloud service provider tagging policies
+4. Managing conflict with cloud service provider tagging policies.
+5. Preservation of pre-existing tags or tags added using external tools.
+6. Regular expression or wildcard characters for classifier tag.
+7. Retry mechanism for failed operation during reconciliation.
 
 ## Proposal 
 
 A new kubernetes controller to generates actions based on tag specification defined by a custom resource. The controller
-reads existing data, applies tags based on overwrite policy, cloud service provider request api rate limit and maximum limit policy.
-The controller would require an initial tag or label, that can be used to identify cloud resources to apply and manage tags.
-Cloud resources can be ignored from being managed by the controller by using ignore tag on the cloud resource and the same 
-is configured on controller's custom resource. Controller reconciles the tag list on cloud resources based on configurable 
-parameter for sync period. 
+reads existing data, applies tags based on opcode and maximum limit policy. The controller would require an initial tag or label, 
+that can be used to identify cloud resources to apply and manage tags. Cloud resources can be ignored from being managed 
+by the controller by removing the classifier tag on the cloud resource. Controller reconciles the tag list on 
+cloud resources periodically at intervals configured by sync period for the controller. 
 
-### Configuration Policies
-
-#### Overwrite policy
-
-Overwrite policy is used when an existing entry is found for the given input tag key. The existing tag key entry may be created 
-either on cloud resource or by previous edit of controller's customer resource. The policy can have following valid values.
-
-1. POLICY_KALL - Replaces any existing entry found for tag key from the input list with new value.
-2. POLICY_KSPEC - Replace any existing entry found and created using custom resource specification.
-3. POLICY_LAPPEND - Appends input tag list to existing list of tags on cloud resource and entries found in custom resource specification.
-4. POLICY_LREPLACE_ALL - Replaces existing tag list found on cloud resources with new input tag list. 
-5. POLICY_LREPLACE_SPEC - Replaces existing tag list created using controller custom resource specification.
+### Controller configuration
 
 #### Maximum limit policy
 
@@ -90,43 +77,22 @@ allowed limit on the cloud resource. The result might differ when applied along 
 1. POLICY_APPLY_PARTIAL - Allows input tag list applied to be partial on cloud resource. 
 2. POLICY_APPLY_STRICT - Applies input tag list strictly in complete.
 
-#### Label policy
+### Opcodes
 
-Label policy defines the tag that define cloud resource inclusivity for management of tags. 
+Controller supports different opcodes for actions to add, update and delete tags. Following are the supported opcodes
+1. "add" - Controller adds tags to the cloud resources. In case of an existing entry for the tag, the add operation fails with an error.
+2. "update" - Controller updates existing tags for the cloud resources. If there is no existing entry, controller tries to 
+add the tag to cloud resources based on maximum limit policy.
+3. "delete" - Controller removes tags from the cloud resources. In case of error, user intervention is required to remove tags manually
+from the cloud resources.
 
-1. "apps.metadata.controller/op : managed/unmanaged>" - 
+### Cloud provider authentication
 
-### High-level workflow sequence
+TBD
 
-#### Bootstrap
-1. User starts the controller with cloud service provider credentials and sync period set.
-2. Controller starts to list/watch custom resource.
-3. Controller queries and lists all resources based on identifier tag or apps.metadata.controller/op tag.
-4. Creates list of existing tags on cloud resource and adds to custom resource.
+### API
 
-#### Add/Update tags 
-
-1. User adds input tag key/value pair list to custom resource specification.
-2. User specifies operation to be performed on the tag list by specific opcode.
-3. Controller checks overwrite policy from custom resource and populates a new list of tags.
-4. Controller performs lexicographic sorting.
-5. Controller trims the tag list as per maximum limit policy specific to cloud resource.
-6. Controller replaces the tag list on cloud resource.
-
-#### Delete tags 
-
-1. User adds tag key list (optionally, value for validation) to custom resource specification.
-2. User specifies operation to be performed on the tag list by specific opcode.
-3. Controller checks overwrite policy from custom resource and populates a new list of tags.
-4. Controller replaces the tag list on cloud resource.
-
-#### Toggle between managed and unmanaged
-
-TODO
-
-## API
-
-### Example
+#### Example
 
 ```yaml
 apiVersion: metadata-controller.cloud.io/v1alpha1
@@ -141,9 +107,9 @@ spec:
       namespace: metadata-controller
   classifiers:
     "kubernetes.io/cluster/test-7lpkm-crhfx" : "owned"
-  controllerpolicy:
-    overwrite: "POLICY_LREPLACE_ALL"
+  controllerconfig:
     limit: "POLICY_APPLY_PARTIAL"
+    syncevery: "10m"
 status:
   type: ready
   status: true
@@ -166,8 +132,11 @@ status:
   status: true
   reason: "none"
   message: "tags are applied successfully to cloud resources"
+  resourcetags:
+    "env": "test"
+    "centre": "eng"
 ```
-
+### GO language structures
 ```go
 type CloudMetadata struct {
     metav1.TypeMeta `json:",inline"`
@@ -180,8 +149,8 @@ type CloudMetadata struct {
 
 type MetadataSpec struct {
     CloudProviderSpec CloudProviderSpec `json:"cloudprovider"`
-    GlobalClassifiers *ClassifierSpec `json:"classifier, omitempty"`
-    GlobalControllerPolicy *ControllerPolicyConfig `json:"controllerpolicy, omitempty"`
+    GlobalClassifiers ClassifierSpec `json:"classifier"`
+    GlobalControllerConfig *ControllerConfig `json:"controllerconfig, omitempty"`
 }
 
 type CloudProviderSpec struct {
@@ -205,8 +174,17 @@ type AWSMetadata struct {
 }
 
 type AWSMetadataSpec struct {
+	OpCode string `json:"opcode"`
     ResourceTags map[string]string `json:"resourcetags"`
 }
+
+type OpCodeType string
+
+const (
+	OpAdd OpCodeType = "add"
+	OpUpdate OpCodeType = "update"
+	OpDelete OpCodeType = "delete"
+)
 
 type CloudProviderConditionType string
 
@@ -237,14 +215,76 @@ type MetadataStatus struct {
     LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
     Reason string `json:"reason, omitempty"`
     Message string `json:"message, omitempty"`
+    ResourceTags map[string]string `json:"resourcetags"`
 }
 
 type ClassifierSpec struct {
     Classifiers map[string]string `json:"classifiers"`
 }
 
-type ControllerPolicyConfig struct {
-    OverwritePolicy OPolicy `json:"overwrite, omitempty"`
+type ControllerConfig struct {
     LimitPolicy LPolicy `json:"limit, omitempty"`
+	SyncEvery  *string  `json:"syncevery, omitempty"`
 }
 ```
+
+### High-level workflow
+
+#### Bootstrap
+1. User starts the controller with cloud service provider credentials and sync period set.
+2. Controller starts to list/watch custom resource.
+3. User creates `AWSMetadata` object with tag list details.
+4. User creates `CloudMetadata` configuration with controller configuration.
+5. Based on the configuration, controller queries and lists all resources based on classifier tag.
+6. Creates list of existing tags on cloud resource and adds to custom resource.
+7. Add/update tag workflow is initiated.
+
+#### Add/Update tags
+
+1. User creates `AWSMetadata` object with tag list details.
+2. User creates `CloudMetadata` configuration with controller configuration.
+3. Controller updates ready condition to false in `MetadataStatus.status`.
+4. Controller validates tag entries from `AWSMetadata.spec.resourcetags` and populates a new list of tags to be added to cloud resource.
+5. Controller trims the tag list as per maximum limit policy specific to cloud resource.
+6. Controller performs lexicographic sorting.
+7. Controller replaces the tag list on the cloud resource.
+8. Controller updates the tag list to `AWSMetadata.status`.
+9. Controller updates ready condition to true in `MetadataStatus.status`.
+
+#### Delete tags
+
+1. User adds tag key list (optionally, value, for validation) to custom resource specification.
+2. User specifies operation to be performed on the tag list by specific opcode.
+3. Controller updates ready condition to false in `MetadataStatus.status`.
+4. Controller gets the active tag list, removes requested tags from the list and populates a new list of tags.
+5. Controller replaces the tag list on the cloud resource.
+6. Controller updates the tag list to `AWSMetadata.status`.
+7. Controller updates ready condition to true in `MetadataStatus.status`.
+
+#### Handling of pre-existing tags or tags added using other tools
+
+In case of add operation, controller appends tags to existing tag list. If there is any tag pre-existing with same key name, 
+there will be an error reported for the operation. While, in case of update operation, the pre-existing tag is updated. There is 
+no distinction made between pre-existing tags and tags in `AWSMetadataSpec` for reconciliation. The active tag list is listed in the status.
+
+#### Classifier tag behaviour
+
+Classifier tags are used to enable controller to get applicable cloud resources to manage tags. Classifier tags are mandatory and should
+be added to cloud resource. Controller does not support any wildcard characters in classifier strings. 
+When multiple classifiers are used, a logical OR condition is applied for the classifiers.
+
+#### Reconciliation
+
+Reconciliation of tags is ignored when ready condition is set to false at `MetadataStatus.status`. Reconciliation does not consider 
+the opcode in spec. Reconciliation of tags is based on active tag list in `AWSMetadata.status.resourcetags`
+
+### STS/Non-STS support
+
+TBD
+
+### Drawbacks
+
+1. User intervention is required for failure resolution of opcode driven operations.
+2. Any user with permission to edit custom resource can influence tags on cloud resources with wide-scoped classifiers.
+3. HA is not supported for the controller.
+4. Override of global configurations specific to cloud provider are not supported.

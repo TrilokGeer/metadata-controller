@@ -15,6 +15,8 @@ or update to tags can be performed for these cloud resources. Whilst, there are 
 like image registry operator, ingress operator, machine api, cco, etc which manage corresponding cloud resources. A uniform way of managing tags
 is required for the cloud resources that are created and used by OpenShift clusters.
 
+The system should be extensible to manage cloud resources that will be used along OpenShift for applications.
+
 The lack of generic controllers to manage tag specific configuration and controllers will pose restrictions on maintenance and usability.
 
 # Decision
@@ -24,5 +26,13 @@ A new operator that manages installation of the controller and enable lifecycle 
 
 # Consequences
 
+## Good
+1. Dedicated controller which avoids conflict with other infrastructure configurations.
+2. It is cleaner to support and develop metadata specific add-ons and features.
+
+## Neutral
 1. A new generic non-core controller that can be installed on-demand.
 2. A new day-2 operator for installation and lifecycle management for the controller pods.
+
+## Bad
+1. Additional resources for operation and maintenance on the controller.

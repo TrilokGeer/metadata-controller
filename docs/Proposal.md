@@ -91,7 +91,7 @@ Controller supports different opcodes for actions to add, update and delete tags
 1. "add" - Controller adds tags to the cloud resources. In case of an existing entry for the tag, the add operation fails with an error.
 2. "update" - Controller updates existing tags for the cloud resources. If there is no existing entry, controller tries to 
 add the tag to cloud resources based on maximum limit policy.
-3. "delete" - Controller removes tags from the cloud resources. In case of error, user intervention is required to remove tags manually
+3. "delete" - Controller removes tags from the cloud resources. In case of specific errors, user intervention may be required to remove tags manually
 from the cloud resources.
 
 ### Cloud provider authentication
@@ -312,8 +312,7 @@ When multiple classifiers are used, a logical OR condition is applied for the cl
 
 #### Reconciliation
 
-Reconciliation of tags is ignored when ready condition is set to false at `MetadataStatus.status`. Reconciliation does not consider 
-the opcode in spec. Reconciliation of tags is based on active tag list in `AWSMetadata.status.resourcetags`. On deletion of AWSMetadataRef 
+Reconciliation of tags is ignored when ready condition is set to false at `MetadataStatus.status`. Reconciliation of tags is based on active tag list in `AWSMetadata.status.resourcetags`. On deletion of AWSMetadataRef 
 or invalid reference, controller does not perform any reconciliation. Ready condition is set to false at `MetadataStatus.status`.
 
 #### No cloud provider configured
@@ -326,7 +325,7 @@ TBD
 
 ### Drawbacks
 
-1. User intervention is required for failure resolution of opcode driven operations.
+1. User intervention maybe required in some cases for failure resolution of opcode driven operations.
 2. Any user with permission to edit custom resource can influence tags on cloud resources with wide-scoped classifiers.
 3. HA is not supported for the controller.
 4. Override of global configurations specific to cloud provider are not supported.

@@ -19,4 +19,11 @@ ad-hoc cloud provider addition. Both configurations are represented as different
 
 # Consequences
 
+## Good
+1. Easy to use and manage tags on cloud providers during cluster deletion or new cluster creation. Only cloud provider spec 
+is required to be updated using the existing controller specification set by admin.
+2. Lower data size to sync with etcd when compared to a single blob object. Though, it is not a significant optimization.
+3. Enables handling requests concurrently for different cloud providers.
+
+## Bad
 1. Additional complexity for having multiple control loops in the system to list/watch different API objects.

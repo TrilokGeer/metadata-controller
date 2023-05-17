@@ -28,7 +28,8 @@ controllers and operators using kubernetes API.
 As a cluster admin, I want to add tags to the cloud resources created during cluster installation,  which help
 for setting security policies.
 
-As a cluster admin, I want tags to be added to the cloud resources created post cluster installation.
+As a cluster admin, I want tags to be added to the cloud resources created post cluster installation which help to include
+cloud resources for other tag processors.
 
 As a cluster admin, I want all tags to be added via metadata CR, which helps to reconcile the tag key and values.
 
